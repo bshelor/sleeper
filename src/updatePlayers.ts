@@ -1,6 +1,14 @@
 import { players } from '../data/2024/players';
 import * as db from './db';
 
+const getAsciiNumber = (str: string) => {
+  let final = 0;
+  for (let i = 0; i < str.length; i++) {
+    final += str.charCodeAt(i);
+  }
+  return final;
+}
+
 const main = async () => {
   await db.connect();
   // const members = await client.query('SELECT * FROM members');
