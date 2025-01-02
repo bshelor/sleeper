@@ -16,7 +16,11 @@ export async function connect() {
   }
 }
 
-export async function get(table: string, whereObj: object) {
+export async function raw(sql: string, values: any[] = []) {
+  return await client.query(sql, values);
+}
+
+async function get(table: string, whereObj: object, type: string = 'one') {
   const keys = Object.keys(whereObj);
   let whereStr = '';
   for (let i = 0; i < keys.length; i++) {
@@ -33,21 +37,38 @@ export async function get(table: string, whereObj: object) {
   `;
 
   const response = await client.query(sql, Object.values(whereObj));
-  return response && response.rows ? response.rows[0] : undefined;
+
+  if (response && response.rows) {
+    switch (type) {
+      case 'one':
+        return response.rows[0];
+      default:
+        return response.rows;    
+    }
+  }
+  return undefined;
+}
+
+export async function getAll(table: string, whereObj: object) {
+  return get(table, whereObj, 'all');
+}
+
+export async function getOne(table: string, whereObj: object) {
+  return get(table, whereObj, 'one');
 }
 
 export async function update(table: string, id: string, updateObj: object, audit: string) {
   const updateStr = Object.entries(updateObj).map(([key, value]) => {
-    if (Array.isArray(value)) { return `${key} = '{${value.map((i: string) => `"${i}"`).join(',')}}'`; } // format array type
+    if (Array.isArray(value)) { return `"${key}" = '{${value.map((i: string) => `"${i}"`).join(',')}}'`; } // format array type
     if (typeof value === 'string') {
-      return `${key} = '${(value as any).replaceAll(`'`, `''`)}'`;
+      return `"${key}" = '${(value as any).replaceAll(`'`, `''`)}'`;
     }
-    return `${key} = '${value}'`;
+    return `"${key}" = '${value}'`;
   }).join(', ');
 
   const sql = `
     UPDATE ${table}
-    SET ${updateStr}, modified_at = '${new Date().toISOString()}', modified_by = '${audit}'
+    SET ${updateStr}, "modified_at" = '${new Date().toISOString()}', "modified_by" = '${audit}'
     WHERE id = ${id}
     RETURNING *
   `;
@@ -56,7 +77,7 @@ export async function update(table: string, id: string, updateObj: object, audit
 }
 
 export async function create(table: string, obj: object, audit: string) {
-  const columns = [...Object.keys(obj), 'created_at', 'created_by'].join(', ');
+  const columns = [...Object.keys(obj), 'created_at', 'created_by'].map(v => `"${v}"`).join(', ');
   const values = Object.values(obj).map((v: any) => {
     if (Array.isArray(v)) { return `'{${v.map((i: string) => `"${i}"`).join(',')}}'`; } // format array type
     if (typeof v === 'string') {
@@ -75,7 +96,7 @@ export async function create(table: string, obj: object, audit: string) {
 }
 
 export async function customUpsert(table: string, obj: Record<string, unknown>, whereObj: Record<string, unknown>, audit: string) {
-  const record = await get(table, whereObj) as any as Record<string, unknown>;
+  const record = await getOne(table, whereObj) as any as Record<string, unknown>;
 
   if (record) {
     const valuesChanged = Object.keys(record).some(key => {
@@ -100,7 +121,7 @@ export async function upsert(table: string, obj: Record<string, unknown>, audit:
   });
   
   // TODO: make this way better lol
-  const columns = [...Object.keys(obj), 'created_at', 'created_by'].join(', ');
+  const columns = [...Object.keys(obj), 'created_at', 'created_by'].map(k => `"${k}"`).join(', ');
   const values = Object.values(obj).map((v: any) => {
     if (Array.isArray(v)) { return `'{${v.map((i: string) => `"${i}"`).join(',')}}'`; } // format array type
     if (typeof v === 'string') {
@@ -109,7 +130,7 @@ export async function upsert(table: string, obj: Record<string, unknown>, audit:
     return `'${v}'`;
   }).join(', ');
 
-  const conflictUpdateSql = Object.keys(obj).map(k => `${k}=EXCLUDED.${k}`).join(', ');
+  const conflictUpdateSql = Object.keys(obj).map(k => `"${k}"=EXCLUDED."${k}"`).join(', ');
   const sql = `
     INSERT INTO ${table}(${columns})
     VALUES (${values}, '${new Date().toISOString()}', '${audit}')
@@ -117,5 +138,6 @@ export async function upsert(table: string, obj: Record<string, unknown>, audit:
     RETURNING *
   `;
 
-  return await client.query(sql);
+  const response = await client.query(sql);
+  return response && response.rows ? response.rows[0] : undefined;
 }

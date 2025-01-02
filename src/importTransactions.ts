@@ -25,6 +25,7 @@ const main = async () => {
             add: trx.adds ? Object.keys(trx.adds)[0] : null,
             drop: trx.drops ? Object.keys(trx.drops)[0] : null,
             external_id: trx.transaction_id,
+            timestamp: trx.created ? new Date(trx.created).toISOString() : null,
           },
           'update_transactions_script'
         );
