@@ -3,6 +3,32 @@ import * as db from './db';
 
 const LEAGUE_ID = '1124462845103661056';
 
+type MatchupPlayer = {
+  points: number;
+  player_id: string;
+  starter: boolean;
+};
+const calculateTotalPossiblePoints = async (players: MatchupPlayer[]) => {
+  const includeStr = players.map((_p, i) => `$${i + 1}`).join(', ');
+  const { rows: playerPositions } = await db.raw(`
+    SELECT position, external_id
+    FROM players
+    WHERE external_id IN (${includeStr})
+  `, [...players.map(p => p.player_id)]);
+  const playerPositionMap = new Map<string, number[]>();
+  for (const p of playerPositions) {
+    const matchupPlayer = players.find(pl => pl.player_id === p.external_id);
+    playerPositionMap.set(p.position, [...(playerPositionMap.get(p.position) || []), matchupPlayer?.points || 0]);
+  }
+  console.log("🚀 ~ calculateTotalPossiblePoints ~ playerPositionMap:", playerPositionMap)
+
+  const starters = players.filter(p => p.starter === true);
+  let bestPossible = 0;
+  for (const starter of starters) {
+
+  }
+};
+
 const main = async () => {
   await db.connect();
 
@@ -59,6 +85,8 @@ const main = async () => {
             });
             return acc;
           }, [] as any);
+
+          const totalPossiblePoints = await calculateTotalPossiblePoints(players);
 
           console.log(`Upserting ${players.length} matchup players for matchup: ${upsertedMatchup.id}`)
 

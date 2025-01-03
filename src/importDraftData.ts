@@ -59,7 +59,11 @@ const main = async () => {
 
     // upsert draft order info
     if (createdDraft) {
+      const memberIds = [];
       for (const [memberId, pickPosition] of Object.entries(draft.draft_order)) {
+        // to be used in draft picks section
+        memberIds.push(memberId);
+
         try {
           await db.customUpsert(
             'draft_order',
@@ -106,6 +110,76 @@ const main = async () => {
         } catch (err: any) {
           console.error(`Error upserting draft_picks record: ${err.message}`, { err: JSON.stringify(err) });
           counts.draft_picks.errored += 1;
+        }
+      }
+
+      const projectedStarters = new Map<string, object>();
+      for (const id of memberIds) {
+        const { rows: allPlayersForTeam } = await db.raw(`
+          SELECT dp.player_id, dp.round, dp.pick, p.position
+          FROM draft_picks dp
+          INNER JOIN teams t on dp.team_id = t.external_id
+          INNER JOIN members m on t.member_id = m.id
+          INNER JOIN players p on dp.player_id = p.external_id
+          WHERE m.external_id = '${id}'
+          ORDER BY dp.round, dp.pick
+        `);
+
+        const psValues: Record<string, { max: number; values: string[] }> = {
+          'QB': {
+            max: 1,
+            values: [],
+          },
+          'RB': {
+            max: 2,
+            values: [],
+          },
+          'WR': {
+            max: 2,
+            values: [],
+          },
+          'FLEX': {
+            max: 2,
+            values: [],
+          },
+          'TE': {
+            max: 1,
+            values: [],
+          },
+          'K': {
+            max: 1,
+            values: [],
+          },
+          'DEF': {
+            max: 1,
+            values: [],
+          }
+        };
+
+        for (const player of allPlayersForTeam) {
+          const position = player.position[0];
+          const potentialSpot = psValues[position as keyof typeof psValues];
+          if (!(potentialSpot.values.length >= potentialSpot.max)) {
+            psValues[position as keyof typeof psValues].values.push(player.player_id);
+          } else if (['WR', 'RB', 'TE'].includes(position)) {
+            if (!(psValues.FLEX.values.length >= psValues.FLEX.max)) {
+              psValues.FLEX.values.push(player.player_id);
+            }
+          }
+        }
+
+        projectedStarters.set(id, psValues);
+        for (const [member, values] of Array.from(projectedStarters)) {
+          for (const position of Object.keys(values)) {
+            const playersToUpdate = (values[position as keyof typeof values] as { max: number; values: string[] }).values;
+            for (const p of playersToUpdate) {
+              await db.raw(`
+                UPDATE draft_picks
+                SET projected_starter = $1
+                WHERE player_id = $2
+              `, [true, p]);
+            }
+          }
         }
       }
     }

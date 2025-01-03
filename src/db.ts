@@ -17,6 +17,8 @@ export async function connect() {
 }
 
 export async function raw(sql: string, values: any[] = []) {
+  console.log("🚀 ~ raw ~ sql:", sql)
+  console.log("🚀 ~ raw ~ values:", values)
   return await client.query(sql, values);
 }
 
