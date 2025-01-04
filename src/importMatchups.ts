@@ -3,6 +3,23 @@ import * as db from './db';
 
 const LEAGUE_ID = '1124462845103661056';
 
+/**
+ * Returns the index of the max value in the array.
+ * @param arr 
+ */
+const arrayMax = (arr: number[]) => {
+  if (!arr.length) { return -1; }
+  let maxIdx = -1;
+  let maxValue = null;
+  for (let i = 0; i < arr.length; i++) {
+    if (maxValue === null || arr[i] > maxValue) {
+      maxValue = arr[i];
+      maxIdx = i;
+    }
+  }
+  return maxIdx;
+}
+
 type MatchupPlayer = {
   points: number;
   player_id: string;
@@ -18,23 +35,66 @@ const calculateTotalPossiblePoints = async (players: MatchupPlayer[]) => {
   const playerPositionMap = new Map<string, number[]>();
   for (const p of playerPositions) {
     const matchupPlayer = players.find(pl => pl.player_id === p.external_id);
-    playerPositionMap.set(p.position, [...(playerPositionMap.get(p.position) || []), matchupPlayer?.points || 0]);
+    playerPositionMap.set(p.position[0], [...(playerPositionMap.get(p.position[0]) || []), matchupPlayer?.points || 0]);
   }
-  console.log("🚀 ~ calculateTotalPossiblePoints ~ playerPositionMap:", playerPositionMap)
 
-  const starters = players.filter(p => p.starter === true);
-  let bestPossible = 0;
-  for (const starter of starters) {
-
+  const positionTracking = {
+    'QB': {
+      max: 1,
+      current: 0
+    },
+    'RB': {
+      max: 2,
+      current: 0
+    },
+    'WR': {
+      max: 2,
+      current: 0
+    },
+    'TE': {
+      max: 1,
+      current: 0
+    },
+    'FLEX': {
+      max: 2,
+      current: 0
+    },
+    'DEF': {
+      max: 1,
+      current: 0
+    },
+    'K': {
+      max: 1,
+      current: 0
+    }
+  };
+  let bestPossiblePts = 0;
+  for (const [key, value] of Array.from(playerPositionMap)) {
+    const neededToFill = positionTracking[key as keyof typeof positionTracking];
+    for (let i = 0; i < neededToFill.max; i++) {
+      if (value.length) {
+        bestPossiblePts += value.splice(arrayMax(value), 1)[0];
+      }
+    }
   }
+
+  // fill FLEX positions with max possible of RB, WR, and TEs
+  const remainingPointsForFlex = [
+    ...playerPositionMap.get('RB') || [],
+    ...playerPositionMap.get('WR') || [],
+    ...playerPositionMap.get('TE') || [],
+  ];
+  for (let i = 0; i < positionTracking.FLEX.max; i++) {
+    if (remainingPointsForFlex.length) {
+      bestPossiblePts += remainingPointsForFlex.splice(arrayMax(remainingPointsForFlex), 1)[0];
+    }
+  }
+
+  return bestPossiblePts;
 };
 
 const main = async () => {
   await db.connect();
-
-  // const test = await db.get('transactions', { id: 2031 });
-  // console.log("🚀 ~ main ~ test:", test)
-  // return;
 
   const counts = {
     matchups: {
@@ -46,8 +106,7 @@ const main = async () => {
       errored: 0,
     }
   };
-  for (let i = 1; i < 19; i++) {
-    // if (i > 1) { break; }
+  for (let i = 1; i < 18; i++) {
     const url = `https://api.sleeper.app/v1/league/${LEAGUE_ID}/matchups/${i}`;
     console.log(`Requesting url: ${url}`);
     const matchups = await get(url);
@@ -55,11 +114,16 @@ const main = async () => {
     
     let upsertedMatchup: any;
     for (const matchup of matchups) {
+      // indicates an invalid matchup in Sleeper API (like playoffs when you're out)
+      if (matchup.matchup_id === null) {
+        console.log(`Skipping matchup for roster_id: ${matchup.roster_id} in week ${i}. Invalid matchup detected.`);
+        continue;
+      }
       try {
         const matchupObj = {
-          roster_id: `${matchup.roster_id}`,
+          roster_id: matchup.roster_id,
           week: i,
-          external_id: `${matchup.matchup_id}`,
+          external_id: matchup.matchup_id,
           points: matchup.points
         }
         upsertedMatchup = await db.customUpsert(
@@ -87,6 +151,7 @@ const main = async () => {
           }, [] as any);
 
           const totalPossiblePoints = await calculateTotalPossiblePoints(players);
+          await db.raw(`UPDATE matchups SET best_possible_pts = $1 WHERE id = $2`, [totalPossiblePoints, upsertedMatchup.id]);
 
           console.log(`Upserting ${players.length} matchup players for matchup: ${upsertedMatchup.id}`)
 

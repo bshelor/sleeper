@@ -45,4 +45,3 @@ const main = (word: string) => {
 };
 
 const res = main('steelers');
-console.log("🚀 ~ file: anagram.ts:15 ~ res:", res)

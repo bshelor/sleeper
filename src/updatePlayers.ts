@@ -11,8 +11,6 @@ const getAsciiNumber = (str: string) => {
 
 const main = async () => {
   await db.connect();
-  // const members = await client.query('SELECT * FROM members');
-  // console.log("🚀 ~ main ~ members:", members.rows);
 
   let success = 0;
   let errored = 0;

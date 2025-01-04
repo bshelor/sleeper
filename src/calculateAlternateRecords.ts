@@ -19,8 +19,6 @@ type Matchup = {
 
 const calculateOriginalDraftRosterMatchup = async (values: Matchup[], draftPicks: Map<string, Set<string>>) => {
   for (const matchup of values) {
-    // if (matchup.week !== 15) { continue; }
-    // if (matchup.week === 1) { // go off projected starters for choosing the starting lineup for this week
       const response = await db.raw(`
         SELECT mp.player_id, mp.points, p.position, m.external_id
         FROM draft_picks dp
@@ -35,44 +33,6 @@ const calculateOriginalDraftRosterMatchup = async (values: Matchup[], draftPicks
           dp.team_id = $2
       `, [matchup.week, matchup.roster_id]);
       let matchupPlayers = response.rows;
-
-      // if (matchupPlayers.length < 10) { // only ever kickers or defenses currently
-      //   const includedIdStr = matchupPlayers.map((v, i) => `$${i + 3}`).join(', ');
-      //   const { rows: remainingStarters } = await db.raw(`
-      //     SELECT mp.points
-      //     FROM matchup_players mp
-      //     LEFT JOIN matchups m on mp.matchup_id = m.id
-      //     INNER JOIN players p on mp.player_id = p.external_id
-      //     WHERE
-      //       m.week = $1
-      //       AND
-      //       m.roster_id = $2
-      //       AND mp.player_id NOT IN (${includedIdStr})
-      //       AND mp.starter IS TRUE
-      //   `, [
-      //     matchup.week,
-      //     matchup.roster_id,
-      //     ...matchupPlayers.map(v => v.player_id)
-      //   ]);
-      //   matchupPlayers = [...matchupPlayers, ...remainingStarters];
-      // }
-
-      
-
-      // await db.customUpsert(
-      //   'alternate_matchups',
-      //   {
-      //     points: totalPoints,
-      //     week: matchup.week,
-      //     roster_id: matchup.roster_id,
-      //     type: 'original_draft'
-      //   },
-      //   {
-      //     week: matchup.week, roster_id: matchup.roster_id, type: 'original_draft'
-      //   },
-      //   'calculate_original_draft_matchups_script'
-      // );
-      
 
       const pointValues: Record<string, { max: number; values: string[] }> = {
         'QB': {
@@ -137,12 +97,9 @@ const calculateOriginalDraftRosterMatchup = async (values: Matchup[], draftPicks
       }, [] as { needed: number; pos: string }[]);
       const uniqueRemaining = Array.from(new Set(remainingPositions.map(p => p.pos)));
 
-      console.log("🚀 ~ calculateOriginalDraftRosterMatchup ~ includedPlayerIds:", includedPlayerIds)
-
       if (uniqueRemaining.length) {
         const neededPositionStr = `(${uniqueRemaining.map((_v, i) => `$${i + 3}=ANY(p.position)`).join(' OR ')})`;
         const includedIdStr = includedPlayerIds.map((_v, i) => `$${i + 3 + uniqueRemaining.length}`).join(', ');
-        console.log("🚀 ~ calculateOriginalDraftRosterMatchup ~ uniqueRemaining:", uniqueRemaining)
         const { rows: remainingStarters } = await db.raw(`
           SELECT mp.points, p.position
           FROM matchup_players mp
@@ -161,7 +118,6 @@ const calculateOriginalDraftRosterMatchup = async (values: Matchup[], draftPicks
           ...uniqueRemaining,
           ...includedPlayerIds
         ]);
-        console.log("🚀 ~ calculateOriginalDraftRosterMatchup ~ remainingStarters:", remainingStarters)
         matchupPlayers = [...matchupPlayers, ...remainingStarters];
       }
 
@@ -212,25 +168,6 @@ const compileDraftPicks = async (year: string) => {
 const main = async () => {
   await db.connect();
 
-  // const counts = {
-  //   drafts: {
-  //     success: 0,
-  //     errored: 0,
-  //   },
-  //   draft_order: {
-  //     success: 0,
-  //     errored: 0,
-  //   },
-  //   draft_picks: {
-  //     success: 0,
-  //     errored: 0,
-  //   }
-  // };
-
-  // const url = `https://api.sleeper.app/v1/league/${LEAGUE_ID}/drafts`;
-  // console.log(`Requesting url: ${url}`);
-  // const drafts = await get(url);
-
   const draftPicks: Map<string, Set<string>> = await compileDraftPicks('2024');
 
   const originalMatchups = new Map();
@@ -255,18 +192,7 @@ const main = async () => {
 
 main()
   .then((val) => {
-    // console.log(`Imported ${val.drafts.success} drafts successfully`);
-    // console.log(`Imported ${val.draft_order.success} draft_order records successfully`);
-    // console.log(`Imported ${val.draft_picks.success} draft_picks records successfully`);
-    // if (val.drafts.errored) {
-    //   console.warn(`Failed to import ${val.drafts.errored} drafts. See logs`);
-    // }
-    // if (val.draft_order.errored) {
-    //   console.warn(`Failed to import ${val.draft_order.errored} draft_order records. See logs`);
-    // }
-    // if (val.draft_picks.errored) {
-    //   console.warn(`Failed to import ${val.draft_picks.errored} draft_picks records. See logs`);
-    // }
+    console.log('Done calculating');
     process.exit(0);
   }).catch(err => {
     console.log(err);
